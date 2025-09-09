@@ -1,18 +1,18 @@
 {% set pyproject = load_file_data("../pyproject.toml", from_recipe_dir=True) %}
 
 package:
-  name: munch-group-template
+  name: primate-prot-var
   version: {{ pyproject.get("project").get("version") }}
 
 source:
-  git_url: https://github.com/munch-group/munch-group-template.git
+  git_url: https://github.com/munch-group/primate-prot-var.git
 
 build:
   number: 0
   script: $PYTHON -m pip install . -vv
   python_version_independent: true
   entry_points:
-    - munch-group-template = munch_group_template:munch_group_template
+    - primate-prot-var = primate_prot_var:primate_prot_var
 
 requirements:
   host:
@@ -37,10 +37,10 @@ dependencies:   # keep this block with only these packages
 
 test:
   imports:
-    - munch_group_template
+    - primate_prot_var
 
 about:
-  home: https://github.com/munch-group/munch-group-template.git
+  home: https://github.com/munch-group/primate-prot-var.git
   license: MIT
-  dev_url: https://github.com/munch-group/munch-group-template.git
-  doc_url: https://munch-group.org/munch-group-template
+  dev_url: https://github.com/munch-group/primate-prot-var.git
+  doc_url: https://munch-group.org/primate-prot-var

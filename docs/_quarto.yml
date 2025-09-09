@@ -37,7 +37,7 @@ interlinks:
     #   inv: objects-test.txt
 
 website:
-  title: "munch-group-template"
+  title: "primate-prot-var"
   page-navigation: true
   navbar:
     left:
@@ -47,7 +47,7 @@ website:
         text: API reference
     right:
       - icon: github
-        href: https://github.com/munch-group/munch-group-template/
+        href: https://github.com/munch-group/primate-prot-var/
   sidebar:
     - id: pages
       title: Get Started
@@ -74,7 +74,7 @@ format:
 quartodoc:
   style: pkgdown
   dir: api
-  package: munch_group_template
+  package: primate_prot_var
   render_interlinks: true
   options:
     signature_name: full
@@ -86,13 +86,13 @@ quartodoc:
 
   sections:
     - title: Some section
-      package: munch_group_template.modulename
+      package: primate_prot_var.modulename
       desc: |
         Some description...
       contents:
         - functionname
     - title: Some other section
-      package: munch_group_template.modulename
+      package: primate_prot_var.modulename
       desc: |
         Some description...
       contents:

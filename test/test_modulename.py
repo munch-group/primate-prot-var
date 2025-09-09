@@ -1,6 +1,6 @@
 import unittest
 
-from munch_group_template.modulename import functionname
+from primate_prot_var.modulename import functionname
 
 class TestModulename(unittest.TestCase):
 
