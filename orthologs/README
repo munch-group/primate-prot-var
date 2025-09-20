@@ -1,0 +1,4 @@
+conda env create -f environment.yml
+conda activate orthologs
+python orthologs.py aaa0769_tables1.csv
+
