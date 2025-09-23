@@ -7,6 +7,18 @@ format:
   code-fold: true
 --- -->
 
+
+
+Download AlphaMissense data and create hdf5 file searchable on the 'uniprot_id' column:
+
+    wget https://zenodo.org/records/8208688/files/AlphaMissense_aa_substitutions.tsv.gz?download=1
+    mv AlphaMissense_aa_substitutions.tsv.gz?download=1 AlphaMissense_aa_substitutions.tsv.gz
+    gzip -d --stdout AlphaMissense_aa_substitutions.tsv.gz | grep -v '#' > alpha_missense_hg38.tsv
+    python -c 'import pandas ; pandas.read_csv("alpha_missense_hg38.tsv", sep="\t").to_hdf("alpha_missense_hg38.h5", key="df", data_columns=["uniprot_id"]);'
+
+
+    pd.read_hdf('alpha_missense_hg38.h5', 'df', where=f'uniprot_id=={uniprot_id}')
+
 # Preface { .unnumbered .noexport }
 
 These pages are generated from a Git repository...
