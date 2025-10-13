@@ -157,8 +157,11 @@ for key in genome:
 species_list = ['Papio_hamadryas', 'Papio_anubis', 'Papio_papio', 
                 'Papio_kindae', 'Papio_cynocephalus', 'Papio_ursinus']
 
-transcript_info = parse_gtf('papAnu4.ncbiRefSeq.gtf')
-#transcript_info = parse_gtf('TTLL10.gtf')
+#transcript_info = parse_gtf('papAnu4.ncbiRefSeq.gtf')
+transcript_info = parse_gtf('TTLL10.gtf')
+
+
+output_file_name = 'TTLL10_variants.csv'
 
 records = []
 
@@ -217,7 +220,7 @@ for species in species_list:
                             if hap == '*':
                                 inframe_stop = i
                     for s in nsyn:
-                        records.append([transcript['transcript_id'], gene_name, sample_id, h+1, len(prot_hap), s, int(inframe_stop)])
+                        records.append([transcript['transcript_id'], gene_name, species, sample_id, h+1, len(prot_hap), s, inframe_stop])
                     nsyn_str = ','.join(nsyn) if nsyn else None
                     if inframe_stop is not None:
                         prot_hap = prot_hap[:inframe_stop] + prot_hap[inframe_stop:].lower()
@@ -225,7 +228,7 @@ for species in species_list:
                     print(prot_hap)
 
 
-pd.DataFrame.from_records(records, columns=['transcript_id', 'gene_name', 'sample_id', 'haplotype', 'protein_length', 'change', 'inframe_stop']).to_csv('prot_variants.csv', index=False)
+pd.DataFrame.from_records(records, columns=['transcript_id', 'gene_name', 'species', 'sample_id', 'haplotype', 'protein_length', 'change', 'inframe_stop']).to_csv(output_file_name, index=False)
 
 # Number of variants discovered in this study                 
 # RefSeqID    Chromosome  Human Ortholog (23 pairs)   Length (bp) - assembly v1.0 SNVs identified Indels identified
