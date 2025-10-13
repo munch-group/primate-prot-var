@@ -29,42 +29,16 @@ def ensembl_to_uniprot(ensembl_id):
         if entry['dbname'] == 'Uniprot_gn':
             return entry['primary_id']
 
-def get_cdna_seqs(ensembl_id, taxids):
+def get_human_cds_seqs(ensembl_id, sequence):
     server = "https://rest.ensembl.org"
-    ext = f"/homology/id/human/{ensembl_id}?compara=vertebrates;type=orthologues;sequence=cdna;aligned=0;target_taxon={taxid};target_taxon={'simiiformes'}"
+    ext = f"/sequence/id/{ensembl_id}?type={sequence};multiple_sequences=1"
     r = requests.get(server+ext, headers={ "Content-Type" : "application/json"})
     if not r.ok:
         r.raise_for_status()
         sys.exit()
     decoded = r.json()
-    orthologs_nt_seq = f"{gene_symbol}_nt_seq.fasta"
-    with open(orthologs_nt_seq, "w") as f:
-        for entry in decoded['data']:
-            for homology in entry['homologies']:
-                print(f">{homology['target']['species']}\n{homology['target']['seq']}", file=f)
-            break
-        else:
-            raise ValueError(f"No homologies found for {gene_symbol}")
-    return orthologs_nt_seq
-
-def get_aa_alignment(ensembl_id, taxids):
-    taxon_options = ';'.join(['target_taxon={t}' for t in taxids])
-    server = "https://rest.ensembl.org"
-    ext = f"/homology/id/human/{ensembl_id}?compara=vertebrates;type=orthologues;sequence=protein;aligned=1;target_taxon={taxid};target_taxon={'simiiformes'}"
-    r = requests.get(server+ext, headers={ "Content-Type" : "application/json"})
-    if not r.ok:
-        r.raise_for_status()
-        sys.exit()
-    decoded = r.json()
-    orthologs_aa_aln = f"{gene_symbol}_aa_align.fasta"
-    with open(orthologs_aa_aln, "w") as f:
-        for entry in decoded['data']:
-            for homology in entry['homologies']:                
-                print(f">{homology['target']['species']}\n{homology['target']['align_seq']}", file=f)
-            break
-        else:
-            raise ValueError(f"No homologies found for {gene_symbol}")
-    return orthologs_aa_aln
+    records = {entry['id']: entry['seq'] for entry in decoded}
+    return records
 
 def get_orthologs(ensembl_id, taxids, sequence, aligned=False):
     server = "https://rest.ensembl.org"
@@ -88,66 +62,67 @@ def get_orthologs(ensembl_id, taxids, sequence, aligned=False):
 
 def get_taxid(taxon_name):
     server = "https://rest.ensembl.org"
-
-    ext = f"/taxonomy/name/{taxon_name}?"
-    
+    ext = f"/taxonomy/id/{taxon_name}?"
     r = requests.get(server+ext, headers={ "Content-Type" : "application/json"})
-    
     if not r.ok:
         r.raise_for_status()
         sys.exit()
-    
     decoded = r.json()
-    for entry in decoded:
-        if entry['scientific_name'].lower() == taxon_name.lower():
-            return entry['id']
-    else:
-        raise ValueError(f"Taxon {taxon_name} not found")
-
+    return decoded['id']
 
 import argparse
 
+taxa = [
+    'primates',        # all primates    
+    'simiiformes',     # all monkeys / apes
+    'catarrhini',      # old world monkeys / apes
+    'cercopithecidae', # old world monkeys (african/asian with tails)
+    'hominoidea',      # all apes (great apes and gibbons)
+    'hominidae',       # great apes (chimpanzee, bonobo, gorilla, orangutan)
+]
 parser = argparse.ArgumentParser(description="Get orthologs for a gene")
-parser.add_argument('-t', "--taxon", dest='target_taxon', action='append', help="Target taxon")
+parser.add_argument('-t', "--taxon", choices=taxa, dest='target_taxon', action='append', help="Target taxon")
 parser.add_argument("gene_symbol", help="Gene symbol")
 args = parser.parse_args()
 
-
-# primates:     
-# simiiformes:     all monkeys / apes
-# catarrhini:      old world monkeys / apes
-# cercopithecidae: old world monkeys
-# hominoidea:      all apes
-# hominidae:       great apes
-
-
-#target_taxon, gene_symbol = 'catarrhini',  'TTLL10'
-#_, target_taxon, gene_symbol = sys.argv
-
+# id conversions
 ensembl_id = hgnc_to_ensembl(args.gene_symbol)
 uniprot_id = ensembl_to_uniprot(ensembl_id)
 
+# translate taxon names to taxon ids
 target_taxon_ids = [get_taxid(taxon) for taxon in args.target_taxon]
 
+# get orthologs cds sequences
 orthologs_nt_seq = get_orthologs(ensembl_id, target_taxon_ids, sequence="cdna", aligned=False)
-orthologs_aa_aln = get_orthologs(ensembl_id, target_taxon_ids, sequence="protein", aligned=True)
 
-# orthologs_nt_seq = get_cdna_seqs(ensembl_id, target_taxon_ids)
-# orthologs_aa_aln = get_aa_alignment(ensembl_id, target_taxon_ids)
+# add human cds variants
+with open(orthologs_nt_seq, "a") as f:
+    for name, cds in get_human_cds_seqs(ensembl_id, "cdna").items():
+        f.write(f">{name}\n{cds}\n")
 
+# file prefix
+prefix = f'{args.gene_symbol}_{ensembl_id}_{uniprot_id}_{'-'.join([x.replace(' ', '_') for x in args.target_taxon])}'
+
+# align cds with macse
 temp_dir = tempfile.mkdtemp(prefix="pre_",suffix="_suf")
-
 tmp_out_aa_aln = f"{temp_dir}/aligned_AA.fa"
 tmp_out_nt_aln = f"{temp_dir}/aligned_NT.fa"
-
-out_aa_aln = f"{args.gene_symbol}_{ensembl_id}_{uniprot_id}_{'-'.join(args.target_taxon)}_aln_aa.fa"
-out_nt_aln = f"{args.gene_symbol}_{ensembl_id}_{uniprot_id}_{'-'.join(args.target_taxon)}_cds_seqs.fa"
-
 cmd = f"macse -prog alignSequences -seq {orthologs_nt_seq} -out_NT {tmp_out_nt_aln} -out_AA {tmp_out_aa_aln} -gc_def 1 -local_realign_init 1 -local_realign_dec 1"
 print(cmd)
-subprocess.run(cmd.split())  # Be polite to the server
+subprocess.run(cmd.split())
 
-cmd = f"macse -prog exportAlignment -align {tmp_out_nt_aln} -codonForInternalStop NNN -codonForInternalFS --- -charForRemainingFS --- -out_NT {out_nt_aln} -out_AA {out_aa_aln}"
+# enrich alignment with extra sequences (if any)
+# extra_cds_seqs = 'results/TTLL10.fa'
+# cmd = f'cmd = f"macse -prog enrichAlignment -align {out_nt_aln} -seq {extra_cds_seqs}'
+# print(cmd)
+# subprocess.run(cmd.split())
+
+# export stats and final alignments                                             
+out_aa_aln = f"{prefix}_protein.fa"
+out_nt_aln = f"{prefix}_cds.fa"
+out_stats_aln = f"{prefix}_stats.csv"
+cmd = f"macse -prog exportAlignment -align {tmp_out_nt_aln} -out_NT {out_nt_aln} -out_AA {out_aa_aln} -out_stat_per_seq {out_stats_aln}"
+# cmd = f"macse -prog exportAlignment -align {tmp_out_nt_aln} -codonForInternalStop NNN -codonForInternalFS --- -charForRemainingFS --- -out_NT {out_nt_aln} -out_AA {out_aa_aln} -out_stat_per_seq VERSION2_{out_stats_aln}"
 print(cmd)
 subprocess.run(cmd.split())
 
