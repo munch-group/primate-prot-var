@@ -1,0 +1,15 @@
+name: orthologs
+channels:
+  - anaconda
+  - conda-forge
+  - bioconda
+  - munch-group
+dependencies:
+  - tqdm
+  - biopython
+  - geneinfo
+  - seaborn
+  - ncbi-datasets-cli
+  - jupyterlab
+  - nodejs
+  - ipython

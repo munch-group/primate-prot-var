@@ -1,0 +1,22 @@
+gene_name,variant_id,chrom,position,ref,alt,mutation_type,consequence,af_total,ac_total,an_total,cds_position,cds_relative_position
+ATM,5-4318533-A-T,chr17,3438710,T,T,Frameshift,stop_gained,0.0009116013287023804,88,39419,NA,Unknown
+BRCA1,2-6581321-A-T,chr12,3315970,G,T,In-frame stop codon,stop_gained,0.0002777061250466925,13,69308,NA,Unknown
+BRCA1,12-5705636-A-T,chr21,4322986,A,T,Splice acceptor,frameshift_variant,0.0008508609332318824,49,28245,NA,Unknown
+BRCA1,5-8665613-A-T,chr4,5446784,A,A,In-frame stop codon,splice_acceptor_variant,0.0005107557750952674,17,81847,NA,Unknown
+BRCA2,1-6765252-A-T,chr19,3410956,A,C,In-frame stop codon,stop_gained,0.0009255572323389583,81,78843,NA,Unknown
+BRCA2,3-1477559-A-T,chr17,8431318,G,C,In-frame stop codon,stop_gained,4.182653689428903e-05,46,41166,NA,Unknown
+BRCA2,18-6837462-A-T,chr1,8786607,A,A,Splice acceptor,frameshift_variant,0.0008032229149069557,63,52591,NA,Unknown
+CHEK2,22-3664619-A-T,chr17,2529877,G,A,Splice acceptor,splice_donor_variant,0.0009695410608114558,29,87331,NA,Unknown
+CHEK2,6-7368381-A-T,chr12,4815733,G,A,In-frame stop codon,splice_acceptor_variant,2.2085967553462923e-05,88,94568,NA,Unknown
+CHEK2,22-6712940-A-T,chr3,8108215,C,T,Frameshift,frameshift_variant,0.000244195669475339,16,47574,NA,Unknown
+CHEK2,7-7992856-A-T,chr15,8630514,T,A,Frameshift,splice_acceptor_variant,0.0003235539908493421,19,30111,NA,Unknown
+CHEK2,8-6240560-A-T,chr15,9272087,C,A,Splice acceptor,splice_acceptor_variant,4.549874128238072e-05,5,24491,NA,Unknown
+MLH1,18-2466407-A-T,chr2,2566728,T,A,Splice acceptor,splice_donor_variant,0.0006551153447112009,100,14417,NA,Unknown
+MLH1,5-3571963-A-T,chr15,2971507,T,A,In-frame stop codon,stop_gained,0.00029956538828799806,82,67184,NA,Unknown
+MLH1,10-5902453-A-T,chr20,6112125,T,A,In-frame stop codon,stop_gained,0.0008375134261780707,63,94881,NA,Unknown
+MSH2,16-2282332-A-T,chr4,3299451,T,G,Splice donor,stop_gained,0.00014883137358523757,59,94973,NA,Unknown
+MSH6,1-2567463-A-T,chr18,1962636,T,T,Splice acceptor,splice_donor_variant,0.0009178314095020322,56,27220,NA,Unknown
+MSH6,12-3278043-A-T,chr19,8853424,G,G,Splice donor,splice_donor_variant,0.00026920768411712275,57,15707,NA,Unknown
+PALB2,13-5460799-A-T,chr20,8683960,T,C,Frameshift,splice_acceptor_variant,0.0008109322504509926,39,63721,NA,Unknown
+PTEN,8-9749493-A-T,chr20,4676952,C,A,Splice donor,stop_gained,0.0004893688692160018,6,70936,NA,Unknown
+TP53,3-8941782-A-T,chr2,5860366,G,C,Frameshift,stop_gained,0.0004849397111435381,44,47294,NA,Unknown
