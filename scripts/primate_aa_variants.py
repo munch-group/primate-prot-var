@@ -596,10 +596,17 @@ def fetch_gnomad_via_api(
     genes: list[str],
     maf_threshold: float = MAF_THRESHOLD
 ) -> pd.DataFrame:
-    """Fetch variants from gnomAD GraphQL API (gene by gene)."""
-    
+    """Fetch variants from gnomAD GraphQL API (gene by gene).
+
+    Retrieves comprehensive variant annotations including:
+    - Population frequencies (global and per-population)
+    - In silico predictors (CADD, REVEL, SpliceAI, AlphaMissense, etc.)
+    - Functional predictions (PolyPhen, SIFT)
+    - Loss-of-function annotations
+    """
+
     gnomad_url = "https://gnomad.broadinstitute.org/api/"
-    
+
     query = """
     query GeneVariants($geneSymbol: String!, $dataset: DatasetId!) {
         gene(gene_symbol: $geneSymbol, reference_genome: GRCh38) {
@@ -610,15 +617,53 @@ def fetch_gnomad_via_api(
                 pos
                 ref
                 alt
+                rsids
+                flags
+                in_silico_predictors {
+                    id
+                    value
+                }
                 exome {
                     af
                     ac
                     an
+                    ac_hom
+                    ac_hemi
+                    filters
+                    populations {
+                        id
+                        ac
+                        an
+                        ac_hom
+                    }
+                    faf95 {
+                        popmax
+                        popmax_population
+                    }
+                    fafmax {
+                        faf95_max
+                        faf95_max_gen_anc
+                        faf99_max
+                        faf99_max_gen_anc
+                    }
                 }
                 genome {
                     af
                     ac
                     an
+                    ac_hom
+                    ac_hemi
+                    filters
+                    populations {
+                        id
+                        ac
+                        an
+                        ac_hom
+                    }
+                    fafmax {
+                        faf95_max
+                        faf95_max_gen_anc
+                    }
                 }
                 transcript_consequence {
                     gene_symbol
@@ -628,6 +673,11 @@ def fetch_gnomad_via_api(
                     hgvsp
                     hgvsc
                     is_canonical
+                    polyphen_prediction
+                    sift_prediction
+                    lof
+                    lof_filter
+                    lof_flags
                 }
             }
         }
@@ -664,14 +714,18 @@ def fetch_gnomad_via_api(
             
             count = 0
             for var in variants:
+                # Get exome and genome data
+                exome = var.get("exome") or {}
+                genome = var.get("genome") or {}
+
                 # Get max AF between exome and genome
-                exome_af = (var.get("exome") or {}).get("af") or 0
-                genome_af = (var.get("genome") or {}).get("af") or 0
+                exome_af = exome.get("af") or 0
+                genome_af = genome.get("af") or 0
                 max_af = max(exome_af, genome_af)
-                
+
                 if max_af < maf_threshold:
                     continue
-                
+
                 # Check for missense in canonical transcript
                 # Note: transcript_consequence is singular in gnomAD API
                 tc = var.get("transcript_consequence")
@@ -699,27 +753,118 @@ def fetch_gnomad_via_api(
 
                 ref_aa, aa_position, alt_aa = aa_change
 
+                # Extract in silico predictor scores
+                predictors = {}
+                for pred in var.get("in_silico_predictors") or []:
+                    pred_id = pred.get("id", "").lower()
+                    pred_value = pred.get("value")
+                    if pred_id and pred_value:
+                        predictors[pred_id] = pred_value
+
+                # Extract population frequencies from exome or genome (prefer exome)
+                # Compute AF from ac/an since gnomAD v4 doesn't provide af per population
+                pop_source = exome if exome.get("af") else genome
+                pop_freqs = {}
+                for pop in pop_source.get("populations") or []:
+                    pop_id = pop.get("id", "").lower()
+                    if pop_id:
+                        ac = pop.get("ac")
+                        an = pop.get("an")
+                        # Calculate AF from ac/an
+                        if ac is not None and an and an > 0:
+                            pop_freqs[f"af_{pop_id}"] = ac / an
+                        else:
+                            pop_freqs[f"af_{pop_id}"] = None
+                        pop_freqs[f"ac_{pop_id}"] = ac
+                        pop_freqs[f"an_{pop_id}"] = an
+                        pop_freqs[f"ac_hom_{pop_id}"] = pop.get("ac_hom")
+
+                # Get faf95 and fafmax (filtering allele frequencies)
+                faf95_data = exome.get("faf95") or genome.get("faf95") or {}
+                fafmax_data = exome.get("fafmax") or genome.get("fafmax") or {}
+
+                # Get rsids
+                rsids = var.get("rsids") or []
+                rsid = rsids[0] if rsids else None
+
+                # Get filters
+                exome_filters = exome.get("filters") or []
+                genome_filters = genome.get("filters") or []
+
                 all_variants.append({
+                    # Basic variant info
                     "species": "human",
                     "gene_id": gene_id,
                     "gene_name": gene_symbol,
                     "transcript_id": tc.get("transcript_id"),
                     "variant_id": var.get("variant_id"),
+                    "rsid": rsid,
                     "chromosome": var.get("variant_id", "").split("-")[0],
                     "genomic_position": var.get("pos"),
                     "ref_allele": var.get("ref"),
                     "alt_allele": var.get("alt"),
+                    # Amino acid change
                     "aa_position": aa_position,
                     "ref_aa": ref_aa,
                     "alt_aa": alt_aa,
-                    "allele_frequency": max_af,
                     "hgvsp": hgvsp,
                     "hgvsc": tc.get("hgvsc"),
-                    "consequence": "missense_variant",
+                    "consequence": major_consequence or "missense_variant",
+                    # Global allele frequencies
+                    "allele_frequency": max_af,
+                    "exome_af": exome_af if exome_af else None,
+                    "genome_af": genome_af if genome_af else None,
+                    "exome_ac": exome.get("ac"),
+                    "exome_an": exome.get("an"),
+                    "exome_ac_hom": exome.get("ac_hom"),
+                    "exome_ac_hemi": exome.get("ac_hemi"),
+                    "genome_ac": genome.get("ac"),
+                    "genome_an": genome.get("an"),
+                    "genome_ac_hom": genome.get("ac_hom"),
+                    "genome_ac_hemi": genome.get("ac_hemi"),
+                    # Fafmax (filtering allele frequency max)
+                    "faf95_max": fafmax_data.get("faf95_max"),
+                    "faf95_max_population": fafmax_data.get("faf95_max_gen_anc"),
+                    "faf99_max": fafmax_data.get("faf99_max"),
+                    "faf99_max_population": fafmax_data.get("faf99_max_gen_anc"),
+                    # Faf95 popmax
+                    "faf95_popmax": faf95_data.get("popmax"),
+                    "faf95_popmax_population": faf95_data.get("popmax_population"),
+                    # Population-specific frequencies (computed from ac/an)
+                    "af_afr": pop_freqs.get("af_afr"),
+                    "af_amr": pop_freqs.get("af_amr"),
+                    "af_asj": pop_freqs.get("af_asj"),
+                    "af_eas": pop_freqs.get("af_eas"),
+                    "af_fin": pop_freqs.get("af_fin"),
+                    "af_nfe": pop_freqs.get("af_nfe"),
+                    "af_sas": pop_freqs.get("af_sas"),
+                    "af_mid": pop_freqs.get("af_mid"),
+                    "af_ami": pop_freqs.get("af_ami"),
+                    # In silico predictors / pathogenicity scores
+                    "cadd_phred": predictors.get("cadd"),
+                    "revel_score": predictors.get("revel_max") or predictors.get("revel"),
+                    "spliceai_score": predictors.get("spliceai_ds_max") or predictors.get("spliceai"),
+                    "alphamissense_score": predictors.get("alphamissense"),
+                    "pangolin_score": predictors.get("pangolin_largest_ds") or predictors.get("pangolin"),
+                    "phylop_score": predictors.get("phylop"),
+                    "sift_max": predictors.get("sift_max") or predictors.get("sift"),
+                    "polyphen_max": predictors.get("polyphen_max") or predictors.get("polyphen"),
+                    # Transcript-level predictions
+                    "polyphen_prediction": tc.get("polyphen_prediction"),
+                    "sift_prediction": tc.get("sift_prediction"),
+                    # LoF annotations
+                    "lof": tc.get("lof"),
+                    "lof_filter": tc.get("lof_filter"),
+                    "lof_flags": tc.get("lof_flags"),
+                    # Quality flags and filters
+                    "flags": ",".join(var.get("flags") or []) if var.get("flags") else None,
+                    "exome_filters": ",".join(exome_filters) if exome_filters else None,
+                    "genome_filters": ",".join(genome_filters) if genome_filters else None,
+                    # Source
                     "source": "gnomAD_v4"
                 })
                 count += 1
-            
+
             print(f"{count} variants")
             time.sleep(0.5)  # Rate limiting
             
