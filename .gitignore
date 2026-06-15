@@ -144,3 +144,11 @@ pixi.lock
 
 .DS_Store
 
+# Large gnomAD LoF data dump — exceeds GitHub's 100 MB limit; keep local only
+results/gnomad_lof/gnomad_lof_all_genes_20251206_003756.csv
+
+# Large genome-wide TOGA .tsv outputs — superseded by the git-storable
+# *.parquet/ datasets (pd-lfs). Kept on disk, not committed. See long-read-lof/METHODS.md
+long-read-lof/results/toga_primates_species.toga_long.tsv
+long-read-lof/results/toga_primates_species.intersections.tsv
+
