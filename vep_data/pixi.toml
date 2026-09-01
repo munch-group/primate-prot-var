@@ -1,0 +1,21 @@
+[workspace]
+authors = ["kaspermunch <kaspermunch@birc.au.dk>"]
+channels = ["conda-forge", "bioconda", "gwforg", "munch-group"]
+name = "vep_data"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+hdbscan = ">=0.8.41,<0.9"
+bcftools = ">=1.21,<2"
+pyarrow = ">=16.1.0,<17"
+duckdb = ">=1.5.0,<2"
+ensembl-vep = ">=115.2,<116"
+samtools = ">=1.21,<2"
+vscodenb = ">=0.1.50,<0.2"
+ipykernel = ">=7.2.0,<8"
+nodejs = ">=20.12.2,<20.13"
+cyvcf2 = ">=0.31.1,<0.32"
+gwf = ">=2.1.1,<3"

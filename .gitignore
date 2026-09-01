@@ -152,3 +152,9 @@ results/gnomad_lof/gnomad_lof_all_genes_20251206_003756.csv
 long-read-lof/results/toga_primates_species.toga_long.tsv
 long-read-lof/results/toga_primates_species.intersections.tsv
 
+# Raw 1000 Genomes ONT (1KG_ONT_VIENNA) SV download — 409 MB, exceeds GitHub's
+# limit; re-fetch from IGSR (see long-read-lof/METHODS.md). The derived
+# data/human_1kgp_sv_lof.tsv + results are kept/committed.
+long-read-lof/data/1kg_ont/*.vcf.gz
+long-read-lof/data/1kg_ont/*.tbi
+
