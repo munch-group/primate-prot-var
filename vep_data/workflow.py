@@ -368,7 +368,27 @@ if not csq_fields:
     print(f"ERROR: No CSQ field found in {{IN_VCF}}", file=sys.stderr)
     sys.exit(1)
 
-rows = []
+# No 'chrom' column in the files: the hive directory (chrom=chrN) carries it.
+# An embedded copy breaks pyarrow dataset discovery (pandas read_parquet with
+# filters) — the partition field and the data column can't be merged.
+SCHEMA = pa.schema([
+    ('pos', pa.int64()), ('ref', pa.string()),
+    ('alt', pa.string()), ('variant_id', pa.string()),
+    ('gene_symbol', pa.string()), ('gene_id', pa.string()),
+    ('transcript_id', pa.string()), ('consequence_terms', pa.string()),
+    ('impact', pa.string()), ('biotype', pa.string()),
+    ('canonical', pa.int8()), ('hgvsc', pa.string()), ('hgvsp', pa.string()),
+    ('sift', pa.string()), ('polyphen', pa.string()),
+    ('af_gnomad', pa.string()), ('clin_sig', pa.string()),
+])
+
+# Stream rows to the writer in batches: holding a whole chromosome in a
+# Python list needs far more than the job's memory. The VCF is already
+# pos-sorted, so row-group stats support range queries without a sort.
+BATCH  = 1_000_000
+writer = pq.ParquetWriter(OUT_DIR / 'part-0.parquet', SCHEMA,
+                          compression='zstd', use_dictionary=True)
+rows, total = [], 0
 for v in vcf:
     csq_raw = v.INFO.get('CSQ', '')
     if not csq_raw:
@@ -377,39 +397,36 @@ for v in vcf:
         record = dict(zip(csq_fields, transcript.split('|')))
         if not record.get('SYMBOL'):
             continue
-            rows.append({{
-                'chrom'            : v.CHROM,
-                'pos'              : v.POS,
-                'ref'              : v.REF,
-                'alt'              : ','.join(v.ALT),
-                'variant_id'       : v.ID or '.',
-                'gene_symbol'      : record.get('SYMBOL', ''),
-                'gene_id'          : record.get('Gene', ''),
-                'transcript_id'    : record.get('Feature', ''),
-                'consequence_terms': record.get('Consequence', ''),
-                'impact'           : record.get('IMPACT', ''),
-                'biotype'          : record.get('BIOTYPE', ''),
-                'canonical'        : 1 if record.get('CANONICAL') == 'YES' else 0,
-                'hgvsc'            : record.get('HGVSc', ''),
-                'hgvsp'            : record.get('HGVSp', ''),
-                'sift'             : record.get('SIFT', ''),
-                'polyphen'         : record.get('PolyPhen', ''),
-                'af_gnomad'        : record.get('gnomADe_AF', '') or record.get('AF', ''),
-                'clin_sig'         : record.get('CLIN_SIG', ''),
-            }})
+        rows.append({{
+            'pos'              : v.POS,
+            'ref'              : v.REF,
+            'alt'              : ','.join(v.ALT),
+            'variant_id'       : v.ID or '.',
+            'gene_symbol'      : record.get('SYMBOL', ''),
+            'gene_id'          : record.get('Gene', ''),
+            'transcript_id'    : record.get('Feature', ''),
+            'consequence_terms': record.get('Consequence', ''),
+            'impact'           : record.get('IMPACT', ''),
+            'biotype'          : record.get('BIOTYPE', ''),
+            'canonical'        : 1 if record.get('CANONICAL') == 'YES' else 0,
+            'hgvsc'            : record.get('HGVSc', ''),
+            'hgvsp'            : record.get('HGVSp', ''),
+            'sift'             : record.get('SIFT', ''),
+            'polyphen'         : record.get('PolyPhen', ''),
+            'af_gnomad'        : record.get('gnomADe_AF', '') or record.get('AF', ''),
+            'clin_sig'         : record.get('CLIN_SIG', ''),
+        }})
+        if len(rows) >= BATCH:
+            writer.write_table(pa.Table.from_pylist(rows, schema=SCHEMA))
+            total += len(rows)
+            rows = []
 
 if rows:
-    table = pa.Table.from_pylist(rows)
-    # Sort by pos so DuckDB row-group stats enable fast range queries
-    import pyarrow.compute as pc
-    table = table.sort_by([('pos', 'ascending')])
-    pq.write_table(
-        table,
-        OUT_DIR / 'part-0.parquet',
-        compression='zstd',
-        use_dictionary=True,
-    )
-    print(f"Wrote {{len(rows)}} rows to {{OUT_DIR}}")
+    writer.write_table(pa.Table.from_pylist(rows, schema=SCHEMA))
+    total += len(rows)
+writer.close()
+if total:
+    print(f"Wrote {{total}} rows to {{OUT_DIR}}")
 else:
     print(f"No genic rows found in {{IN_VCF}}")
 
@@ -419,7 +436,7 @@ SENTINEL.touch()
     return AnonymousTarget(
         inputs  = [str(in_vcf)],
         outputs = [str(sentinel)],
-        options = {"memory": "16gb", "walltime": "02:00:00", "cores": 1},
+        options = {"memory": "16gb", "walltime": "06:00:00", "cores": 1},
         spec    = f"""
 {ensure_dirs(out_dir)}
 pixi run python - << 'PYEOF'
@@ -470,27 +487,103 @@ for chrom in CHROMS:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# GENE INDEX — gene_symbol → (chrom, pos_min, pos_max) locus table
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# gene_symbol filters cannot use parquet row-group statistics (rows are
+# pos-sorted, so per-row-group symbol min/max spans the alphabet) and scan
+# the whole dataset (~13 min). But a gene's rows ARE contiguous in pos
+# order, so one small locus table turns a gene lookup into a pruned
+# chrom + pos-range read (<1 s):
+#
+#   idx = pd.read_parquet('steps/parquet/_gene_index.parquet')
+#   g = idx[idx.gene_symbol == 'TP53'].iloc[0]
+#   df = pd.read_parquet('steps/parquet',
+#           filters=[('chrom', '==', g.chrom),
+#                    ('pos', '>=', g.pos_min), ('pos', '<=', g.pos_max)])
+#   df = df[df.gene_symbol == 'TP53']   # neighbouring genes overlap the window
+#
+# The underscore prefix keeps the file out of pyarrow/pandas dataset
+# discovery, so it can live inside the dataset directory.
+
+GENE_INDEX = PARQUET / "_gene_index.parquet"
+
+gwf.target(
+    name    = "GeneIndex",
+    inputs  = all_parquet_sentinels,
+    outputs = [str(GENE_INDEX)],
+    memory  = "16gb",
+    walltime= "04:00:00",
+    cores   = 8,
+) << f"""
+pixi run python - << 'PYEOF'
+import duckdb
+con = duckdb.connect()
+con.execute("SET threads=8")
+# glob only the partition dirs: {PARQUET}/**/*.parquet would also match
+# _gene_index.parquet itself on a rerun (DuckDB does not skip _* files)
+con.execute('''
+    COPY (
+        SELECT gene_symbol, chrom,
+               min(pos) AS pos_min,
+               max(pos) AS pos_max,
+               count(*) AS n_rows
+        FROM read_parquet('{PARQUET}/chrom=*/part-*.parquet', hive_partitioning=true)
+        WHERE gene_symbol <> ''
+        GROUP BY 1, 2
+        ORDER BY gene_symbol, chrom
+    ) TO '{GENE_INDEX}' (FORMAT parquet)
+''')
+n = con.execute("SELECT count(*) FROM '{GENE_INDEX}'").fetchone()[0]
+print(f"gene index written: {{n}} (gene, chrom) rows")
+PYEOF
+"""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # FINAL ENDPOINT — waits for all chromosomes, prints summary
 # ══════════════════════════════════════════════════════════════════════════════
 
 gwf.target(
     name    = "AllDone",
     inputs  = all_parquet_sentinels,
-    outputs = [str(PARQUET / "README.md")],
+    # Underscore prefix: pyarrow dataset discovery ignores _*/.* files, so
+    # the README must not shadow the parquet files (pandas read_parquet on
+    # the directory fails on any non-parquet file without it).
+    outputs = [str(PARQUET / "_README.md")],
     memory  = "1gb",
     walltime= "00:10:00",
     cores   = 1,
 ) << f"""
-pixi run cat > {PARQUET}/README.md << 'EOF'
+pixi run cat > {PARQUET}/_README.md << 'EOF'
 # VEP Parquet dataset
 
 Generated by workflow.py using Ensembl release {ENSEMBL} / GRCh38.
+
+Hive-partitioned by chromosome; the chrom column lives in the directory
+names only (multiallelic records are split, one alt allele per row).
 
 ## Structure
 parquet/
     chrom=chr1/part-0.parquet
     chrom=chr2/part-0.parquet
     ...
+
+## Query example (pandas / pyarrow)
+import pandas as pd
+df = pd.read_parquet('parquet',
+                     filters=[('chrom', '==', 'chr22')],
+                     columns=['pos', 'gene_symbol', 'consequence_terms'])
+
+## Fast per-gene lookup (via _gene_index.parquet, built by GeneIndex)
+# gene_symbol filters alone scan the whole dataset; a gene's rows are
+# contiguous in pos order, so look up its locus first (<1 s total):
+idx = pd.read_parquet('parquet/_gene_index.parquet')
+g = idx[idx.gene_symbol == 'TP53'].iloc[0]
+df = pd.read_parquet('parquet',
+                     filters=[('chrom', '==', g.chrom),
+                              ('pos', '>=', g.pos_min), ('pos', '<=', g.pos_max)])
+df = df[df.gene_symbol == 'TP53']  # neighbouring genes overlap the window
 
 ## Query example (DuckDB)
 import duckdb
